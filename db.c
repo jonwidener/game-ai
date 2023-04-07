@@ -18,8 +18,6 @@ int init_db() {
 
 	if (rc) {
 		fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
-	} else {
-		fprintf(stderr, "Opened database successfully\n");
 	}
 
 	rc = setup_db();

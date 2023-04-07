@@ -5,7 +5,7 @@
 #include "chess.h"
 #include "mem.h"
 
-struct db_move_history  g_move_history;
+struct db_move_history g_move_history;
 struct board_history g_board_history;
 
 void serialize_game_state(struct board_state_struct *board_state, char *serial_string) {
@@ -90,71 +90,6 @@ void position_to_string(char *result, int position) {
 
 int string_to_position(char *position) {
   return position[0] - 97 + (8 * (position[1] - 48 - 1));
-}
-
-void print_piece(unsigned char piece) {
-  unsigned char masked_piece = piece & 7;
-  char output = ' ';
-  if (masked_piece == 1) {
-    output = 'P';
-  } else if (masked_piece == 2) {
-    output = 'R';
-  } else if (masked_piece == 3) {
-    output = 'N';
-  } else if (masked_piece == 4) {
-    output = 'B';
-  } else if (masked_piece == 5) {
-    output = 'Q';
-  } else if (masked_piece == 6) {
-    output = 'K';
-  }
-  printf(" %c ", output);  
-}
-
-void print_board(unsigned char *board_pieces) {
-  printf("\n");
-  bool is_light = true;
-  char color[12];
-  for (int r = 8; r >= 0; r--) {
-    if (r > 0) {
-      printf(" %c ", r + 48);
-    } else {
-      printf("   ");
-    }
-    for (int f = 0; f < 8; f++) {
-      if (r > 0) {
-        if (is_light == true) {
-          strcpy(color, "88;120;56");
-        } else {
-          strcpy(color, "120;88;56");
-        }
-        printf("\x1b[48;2;%sm", color);
-        if (board_pieces[f + (r - 1) * 8] < 8) {
-          printf("\x1b[38;2;0;0;0m");
-        }
-        if (board_pieces[f + (r - 1) * 8] == 0) {
-          printf("   ");
-        } else {
-          print_piece(board_pieces[f + (r - 1) * 8]);
-        }        
-        printf("\x1b[0m");
-        is_light = !is_light;
-      } else {
-        printf("%c  ", f % 8 + 97);
-      }
-    }
-    is_light = !is_light;
-    printf("\n");
-  }
-  printf("\n");  
-}
-
-void print_legal_moves(struct move *move_list) {
-  printf("Legal moves: ");
-  for (struct move *cur = move_list; cur != NULL; cur = cur->next) {
-    printf("%s ", cur->text);
-  }
-  printf("\n");
 }
 
 bool check_for_check(struct board_state_struct *board_state, int player) {

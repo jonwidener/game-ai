@@ -6,5 +6,6 @@ int setup_db();
 int exec_query(char *sql);
 int close_db();
 static int callback(void *NotUsed, int argc, char **argv, char **azColName);
+int add_game_to_db();
 
 #endif

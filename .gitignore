@@ -1,0 +1,13 @@
+# Executable
+chess-ai
+
+# Logs
+draw_log
+logfile
+mem_log
+
+# Database
+chess.db
+
+# IDE
+.vscode/

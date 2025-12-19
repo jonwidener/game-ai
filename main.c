@@ -5,6 +5,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <time.h>
+#include <sqlite3.h>
 #include "chess.h"
 #include "db.h"
 #include "mem.h"
@@ -12,10 +13,14 @@
 void print_board(unsigned char*);
 void print_piece(unsigned char);
 void print_legal_moves(struct move*);
+void end_game(int winner);
+struct db_move *get_moves_from_database(const char *serial);
+void update_database(const char *serial, const char *move, int player);
 
 extern struct mem_addresses *g_mem_addresses;
 extern struct db_move_history g_move_history;
 extern struct board_history g_board_history;
+extern sqlite3 *db;
 
 bool g_run_program = true;
 bool g_kb_int = false;
@@ -117,7 +122,7 @@ int main (int argc, char **argv) {
 						fprintf(log, "Stalemate\n");
 						winner = -1;
 					}    
-					end_game(conn, winner);
+					end_game(winner);
 					endgame = true;
 				} else if (in_check) {
 					//strcat(move_history, "+");
@@ -159,7 +164,7 @@ int main (int argc, char **argv) {
 					printf("Draw - Insufficient Material\n");
 					fprintf(log, "Draw - Insufficient Material\n");
 					//fprintf(draw_log, "%s\nInsufficient Material\n", move_history);
-					end_game(conn, -1);
+					end_game(-1);
 					endgame = true;
 				}
 
@@ -183,7 +188,7 @@ int main (int argc, char **argv) {
 							printf("Draw - Threefold Repetition\n");
 							fprintf(log, "Draw - Threefold Repetition\n");
 							//fprintf(draw_log, "%s\nThreefold Repetition\n", move_history);
-							end_game(conn, -1);
+							end_game(-1);
 							endgame = true;
 							break;
 						}
@@ -198,7 +203,7 @@ int main (int argc, char **argv) {
 				printf("Draw - 50 Turns\n");
 				fprintf(log, "Draw - 50 Turns\n");
 				//fprintf(draw_log, "%s\n200 Turns\n", move_history);
-				end_game(conn, -1);
+				end_game(-1);
 				endgame = true;
 			}
 
@@ -234,7 +239,7 @@ int main (int argc, char **argv) {
 					fprintf(log, "%s: ", board_state->cur_player == 1 ? "White" : "Black");
 					int num_new_moves = 0, move_cnt = 0;
 					char move_choice[10];        
-					moves_from_db = get_moves_from_database(conn, serial);
+					moves_from_db = get_moves_from_database(serial);
 	//        printf("got moves from db\n");
 	//        for (struct db_move *cur2 = moves_from_db; cur2 != NULL; cur2 = cur2->next) {
 	//          fprintf(log, "m: %s has a win rate of %f\n", cur2->move, cur2->win_rate);
@@ -299,7 +304,7 @@ int main (int argc, char **argv) {
 	//            printf("strcat turn_cnt\n");
 						}
 	//          printf("aboute to run update_databasae\n");
-						update_database(conn, serial, move_choice, board_state->cur_player);
+						update_database(serial, move_choice, board_state->cur_player);
 	//          printf("g_history updated\n");
 						strcat(move_history, move_choice);
 	//          printf("history updated\n");
@@ -321,7 +326,7 @@ int main (int argc, char **argv) {
 							sprintf(t, "%i. ", turn_cnt);
 							strcat(move_history, t);
 						}
-						update_database(conn, serial, user_input, board_state->cur_player);
+						update_database(serial, user_input, board_state->cur_player);
 						strcat(move_history, user_input);
 						if (board_state->cur_player == 1) {
 							board_state->cur_player = 0;
@@ -449,5 +454,68 @@ void print_legal_moves(struct move *move_list) {
     printf("%s ", cur->text);
   }
   printf("\n");
+}
+
+void end_game(int winner) {
+  char query[512];
+  for (int i = 0; i < g_move_history.count; i++) {
+    bool skip = false;
+    for (int j = 0; j < i; j++) {
+      if (strcmp(g_move_history.moves[i].move, g_move_history.moves[j].move) == 0 &&
+          strcmp(g_move_history.moves[i].serial, g_move_history.moves[j].serial) == 0) {
+        skip = true;
+        break;
+      }
+    }
+    if (skip) {
+      continue;
+    }
+    char win_lose_draw[10];
+    if (winner == -1) {
+      sprintf(win_lose_draw, "draws");
+    } else if (g_move_history.moves[i].player == winner) {
+      sprintf(win_lose_draw, "wins");
+    } else {
+      sprintf(win_lose_draw, "losses");
+    }
+    sprintf(query, "INSERT INTO chess_positions (serial, move, %s) VALUES ('%s', '%s', 1) "
+                   "ON CONFLICT(serial, move) DO UPDATE SET %s = %s + 1",
+            win_lose_draw, g_move_history.moves[i].serial, g_move_history.moves[i].move,
+            win_lose_draw, win_lose_draw);
+    exec_query(query);
+  }
+}
+
+struct db_move *get_moves_from_database(const char *serial) {
+  struct db_move *moves_from_db = NULL, *temp = NULL;
+  char query[512];
+  sqlite3_stmt *stmt;
+
+  sprintf(query, "SELECT move, CASE WHEN wins + losses + draws > 0 "
+                 "THEN (wins + 0.5 * draws) / (wins + losses + draws) ELSE 0 END as win_rate "
+                 "FROM chess_positions WHERE serial = '%s' ORDER BY win_rate ASC", serial);
+
+  if (sqlite3_prepare_v2(db, query, -1, &stmt, NULL) != SQLITE_OK) {
+    fprintf(stderr, "Error preparing query: %s\n", sqlite3_errmsg(db));
+    return NULL;
+  }
+
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    temp = (struct db_move*)debug_malloc(sizeof(struct db_move));
+    sprintf(temp->move, "%s", sqlite3_column_text(stmt, 0));
+    temp->win_rate = sqlite3_column_double(stmt, 1);
+    temp->next = moves_from_db;
+    moves_from_db = temp;
+  }
+
+  sqlite3_finalize(stmt);
+  return moves_from_db;
+}
+
+void update_database(const char *serial, const char *move, int player) {
+  strcpy(g_move_history.moves[g_move_history.count].serial, serial);
+  strcpy(g_move_history.moves[g_move_history.count].move, move);
+  g_move_history.moves[g_move_history.count].player = player;
+  g_move_history.count++;
 }
 

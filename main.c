@@ -458,6 +458,9 @@ void print_legal_moves(struct move *move_list) {
 
 void end_game(int winner) {
   char query[512];
+
+  exec_query("BEGIN TRANSACTION");
+
   for (int i = 0; i < g_move_history.count; i++) {
     bool skip = false;
     for (int j = 0; j < i; j++) {
@@ -484,6 +487,8 @@ void end_game(int winner) {
             win_lose_draw, win_lose_draw);
     exec_query(query);
   }
+
+  exec_query("COMMIT");
 }
 
 struct db_move *get_moves_from_database(const char *serial) {
